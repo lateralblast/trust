@@ -61,6 +61,7 @@ def print_version()
   name       = file_array.grep(/^# Name/)[0].split(":")[1].gsub(/^\s+/,'').chomp
   puts name+" v. "+version+" "+packager
   puts
+  return
 end
 
 # Print information regarding the usage of the script
@@ -551,7 +552,7 @@ begin
     end
   end
   if used == 0
-    print_usage
+    print_usage(options)
   end
 rescue
   print_usage(options)
@@ -564,10 +565,12 @@ end
 
 if opt["h"]
   print_usage(options)
+  exit
 end
 
 if opt["V"]
   print_version()
+  exit
 end
 
 if opt["v"]
