@@ -1,0 +1,7 @@
+# Ruby gems (install with: bundle install)
+getopt
+writeexcel
+
+# System tools (not installable via gem/pip; install with your package manager)
+# pdftotext (poppler-utils)
+# dos2unix

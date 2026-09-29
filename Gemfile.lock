@@ -1,0 +1,18 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    getopt (1.7.1)
+    nkf (0.3.0)
+    writeexcel (1.0.9)
+      nkf
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  getopt
+  writeexcel
+
+BUNDLED WITH
+   2.6.9

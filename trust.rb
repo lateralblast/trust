@@ -1,9 +1,9 @@
 #!/usr/bin/ruby
 
 # Name:         trust (To RUn SheeT)
-# Version:      0.0.4
+# Version:      0.2.0
 # Release:      1
-# License:      Open Source
+# License:      CC BY-NC-SA
 # Group:        System
 # Source:       N/A
 # URL:          http://lateralblast.com.au/
@@ -111,9 +111,15 @@ def process_pdf_file(pdf_file)
   file_name = File.basename(pdf_file,".pdf").chomp
   txt_file  = pdf_dir+"/"+file_name+".txt"
   if !File.exist?(txt_file)
-    puts "Convering "+pdf_file+" to "+txt_file
-    %x[pdftotext #{pdf_file}]
-    %x[dos2unix #{txt_file}]
+    puts "Converting "+pdf_file+" to "+txt_file
+    if !system("pdftotext",pdf_file,txt_file)
+      puts "Failed to convert "+pdf_file+" (is pdftotext installed?)"
+      exit 1
+    end
+    if !system("dos2unix","-q",txt_file)
+      puts "Failed to run dos2unix on "+txt_file+" (is dos2unix installed?)"
+      exit 1
+    end
   end
   return txt_file
 end
@@ -121,48 +127,47 @@ end
 # Process text file
 
 def process_txt_file(txt_file,output_mode,output_file)
-  if output_file.match(/[A-z]/)
+  if output_file.match(/[A-Za-z]/) and !$output_open
+    $output_open = true
     if output_mode == "xls"
-      row_no    = 1
-      workbook  = WriteExcel.new(output_file)
+      $row_no    = 1
+      $workbook  = WriteExcel.new(output_file)
       name      = "CIS Runsheet"
-      worksheet = workbook.add_worksheet(name)
-      format    = workbook.add_format
-      header    = workbook.add_format
+      $worksheet = $workbook.add_worksheet(name)
+      $format    = $workbook.add_format
+      header    = $workbook.add_format
       header.set_bold(1)
       header.set_text_wrap
       header.set_align('center')
-      worksheet.write('A1','Source',header)
-      worksheet.set_column(1, 0,  20)
-      worksheet.write('B1','Document',header)
-      worksheet.write('C1','Version',header)
-      worksheet.write('D1','Section',header)
-      worksheet.write('E1','Page',header)
-      worksheet.set_column(5, 0,  20)
-      worksheet.write('F1','Test',header)
-      worksheet.write('G1','Level',header)
-      worksheet.write('H1','Vendor',header)
-      worksheet.write('I1','OS',header)
-      worksheet.write('J1','Release',header)
-      worksheet.set_column(10, 0,  80)
-      worksheet.write('K1','Description',header)
-      worksheet.set_column(11, 0,  80)
-      worksheet.write('L1','Rationale',header)
-      worksheet.set_column(12, 0,  80)
-      worksheet.write('M1','Audit',header)
-      worksheet.set_column(13, 0,  80)
-      worksheet.write('N1','Remediation',header)
-      worksheet.write('O1','Impact',header)
-      format.set_bold(0)
-      format.set_text_wrap
-      format.set_align('left')
+      $worksheet.write('A1','Source',header)
+      $worksheet.set_column(0, 1,  20)
+      $worksheet.write('B1','Document',header)
+      $worksheet.write('C1','Version',header)
+      $worksheet.write('D1','Section',header)
+      $worksheet.write('E1','Page',header)
+      $worksheet.set_column(5, 5,  20)
+      $worksheet.write('F1','Test',header)
+      $worksheet.write('G1','Level',header)
+      $worksheet.write('H1','Vendor',header)
+      $worksheet.write('I1','OS',header)
+      $worksheet.write('J1','Release',header)
+      $worksheet.set_column(10, 13,  80)
+      $worksheet.write('K1','Description',header)
+      $worksheet.write('L1','Rationale',header)
+      $worksheet.write('M1','Audit',header)
+      $worksheet.write('N1','Remediation',header)
+      $worksheet.write('O1','Impact',header)
+      $format.set_bold(0)
+      $format.set_text_wrap
+      $format.set_align('left')
     else
-      file = File.open(output_file,"w")
+      $file = File.open(output_file,"w")
     end
   end
-  if output_mode == "csv"
-    if output_file.match(/[A-z]/)
-      file.write("Source,Document,Version,Section,Page,Test,Level,Vendor,OS,Release,Check,Fix,Description,Rationale,Audit,Remediation,Impact\n")
+  if output_mode == "csv" and !$header_done
+    $header_done = true
+    if output_file.match(/[A-Za-z]/)
+      $file.write("Source,Document,Version,Section,Page,Test,Level,Vendor,OS,Release,Check,Fix,Description,Rationale,Audit,Remediation,Impact\n")
     else
       puts "Source,Document,Version,Section,Page,Test,Level,Vendor,OS,Release,Check,Fix,Description,Rationale,Audit,Remediation,Impact"
     end
@@ -190,7 +195,7 @@ def process_txt_file(txt_file,output_mode,output_file)
   end
   doc_ver        = file_info[-1].gsub(/v/,"")
   file_text      = []
-  file_text      = %x[cat #{txt_file} |egrep '[A-z]|[0-9]' |grep -v '^-o$'].split("\n")
+  file_text      = File.readlines(txt_file,:chomp=>true,:encoding=>"BINARY").select{|text_line| text_line.match(/[A-Za-z]|[0-9]/) and text_line != "-o"}
   first_test     = 1
   section_no     = ""
   page_no        = ""
@@ -216,10 +221,12 @@ def process_txt_file(txt_file,output_mode,output_file)
     counter = counter + 1
     line    = line.stripec
     line    = line.chomp
-    if line.match(/[A-z]|[0-9]/)
+    prev_line      = counter > 1 ? file_text[counter-2] : ""
+    prev_prev_line = counter > 2 ? file_text[counter-3] : ""
+    if line.match(/[A-Za-z]|[0-9]/)
       case line
       when /P a g e$|Page$/
-        page_no = line.gsub(/[A-z]|\||\s+/,"")
+        page_no = line.gsub(/[A-Za-z]|\||\s+/,"")
       when /Scored\)$|Appendix:$/
         if first_test != 1
           if output_mode == "xls"
@@ -232,22 +239,22 @@ def process_txt_file(txt_file,output_mode,output_file)
             impact      = impact.join("\r")
             applicable  = applicable.join
             doc_name    = file_name+".pdf"
-            worksheet.write(row_no,0,'CIS',format)
-            worksheet.write(row_no,1,doc_name,format)
-            worksheet.write(row_no,2,doc_ver,format)
-            worksheet.write(row_no,3,section_no,format)
-            worksheet.write(row_no,4,page_no,format)
-            worksheet.write(row_no,5,test_name,format)
-            worksheet.write(row_no,6,applicable,format)
-            worksheet.write(row_no,7,vendor,format)
-            worksheet.write(row_no,8,os_name,format)
-            worksheet.write(row_no,9,os_ver,format)
-            worksheet.write(row_no,10,description,format)
-            worksheet.write(row_no,11,rationale,format)
-            worksheet.write(row_no,12,audit,format)
-            worksheet.write(row_no,13,remediation,format)
-            worksheet.write(row_no,14,impact,format)
-            row_no = row_no+1
+            $worksheet.write($row_no,0,'CIS',$format)
+            $worksheet.write($row_no,1,doc_name,$format)
+            $worksheet.write($row_no,2,doc_ver,$format)
+            $worksheet.write($row_no,3,section_no,$format)
+            $worksheet.write($row_no,4,page_no,$format)
+            $worksheet.write($row_no,5,test_name,$format)
+            $worksheet.write($row_no,6,applicable,$format)
+            $worksheet.write($row_no,7,vendor,$format)
+            $worksheet.write($row_no,8,os_name,$format)
+            $worksheet.write($row_no,9,os_ver,$format)
+            $worksheet.write($row_no,10,description,$format)
+            $worksheet.write($row_no,11,rationale,$format)
+            $worksheet.write($row_no,12,audit,$format)
+            $worksheet.write($row_no,13,remediation,$format)
+            $worksheet.write($row_no,14,impact,$format)
+            $row_no = $row_no+1
           end
           if output_mode == "txt"
             description = description.join("\n").gsub(/"/,"'")
@@ -258,26 +265,25 @@ def process_txt_file(txt_file,output_mode,output_file)
             remediation = remediation.join("\n").gsub(/"/,"'")
             impact      = impact.join("\n").gsub(/"/,"'")
             applicable  = applicable.join
-            if output_file.match(/[A-z]/)
-              file.write("\n")
-              file.write("Resource:    CIS\n")
-              file.write("File:        #{file_name}.pdf\n")
-              file.write("Version      #{doc_ver}\n")
-              file.write("Section:     #{section_no}\n")
-              file.write("Page:        #{page_no}\n")
-              file.write("Test:        #{test_name}\n")
-              file.write("Level:       #{applicable}\n")
-              file.write("Vendor:      #{vendor}\n")
-              file.write("OS:          #{os_name}\n")
-              file.write("OS Rel:      #{os_ver}\n")
-              file.write("Impact\n#{impact}\n")
-              file.write("Description:\n#{description}\n")
-              file.write("Rationale:\n#{rationale}\n")
-              file.write("Audit:\n#{audit}\n")
-              file.write("Check:\n#{check}\n")
-              file.write("Remediation:\n#{remediation}\n")
-              file.write("Fix:\n#{fix}\n")
-              file.write("Impact:\n#{impact}\n")
+            if output_file.match(/[A-Za-z]/)
+              $file.write("\n")
+              $file.write("Resource:    CIS\n")
+              $file.write("File:        #{file_name}.pdf\n")
+              $file.write("Version      #{doc_ver}\n")
+              $file.write("Section:     #{section_no}\n")
+              $file.write("Page:        #{page_no}\n")
+              $file.write("Test:        #{test_name}\n")
+              $file.write("Level:       #{applicable}\n")
+              $file.write("Vendor:      #{vendor}\n")
+              $file.write("OS:          #{os_name}\n")
+              $file.write("OS Rel:      #{os_ver}\n")
+              $file.write("Impact:\n#{impact}\n")
+              $file.write("Description:\n#{description}\n")
+              $file.write("Rationale:\n#{rationale}\n")
+              $file.write("Audit:\n#{audit}\n")
+              $file.write("Check:\n#{check}\n")
+              $file.write("Remediation:\n#{remediation}\n")
+              $file.write("Fix:\n#{fix}\n")
             else
               puts
               puts "Resource:    CIS"
@@ -294,14 +300,9 @@ def process_txt_file(txt_file,output_mode,output_file)
               puts "Description:\n"+description
               puts "Rationale:\n"+rationale
               puts "Audit:\n"+audit
-              if check
-                puts "Check:\n"+check
-              end
+              puts "Check:\n"+check
               puts "Remediation:\n"+remediation
-              if fix
-                puts "Fix:\n"+fix
-              end
-              puts "Impact:\n"+impact
+              puts "Fix:\n"+fix
             end
           end
           if output_mode == "csv"
@@ -321,20 +322,21 @@ def process_txt_file(txt_file,output_mode,output_file)
             remediation = remediation.join(" ").gsub(/"/,"'")
             impact      = impact.join(" ").gsub(/"/,"'")
             applicable  = applicable.join
-            if output_file.match(/[A-z]/)
-              file.write("CIS,#{file_name},#{doc_ver},#{section_no},#{page_no},#{test_name},#{applicable},#{vendor},#{os_name},#{os_ver},#{check},#{fix},\"#{impact}\",\"#{description}\".\"#{rationale}\",\"#{audit}\",\"#{remediation}\"\n")
+            csv_line = "CIS,#{file_name},#{doc_ver},#{section_no},#{page_no},#{test_name},#{applicable},#{vendor},#{os_name},#{os_ver},#{check},#{fix},\"#{description}\",\"#{rationale}\",\"#{audit}\",\"#{remediation}\",\"#{impact}\""
+            if output_file.match(/[A-Za-z]/)
+              $file.write(csv_line+"\n")
             else
-              puts "CIS,"+file_name+","+doc_ver+","+section_no+","+page_no+","+test_name+","+applicable+","+vendor=","+os_name+","+os_ver+","+check+","+fix+",\""+impact+"\".\""+description+"\".\""+rationale+"\",\""+audit+"\",\""+remediation+"\""
+              puts csv_line
             end
           end
         else
           first_test = 0
         end
         if line.match(/Scored/) and !line.match(/^[0-9]/)
-          if !file_text[counter-2].match(/[A-z]|[0-9]/)
-            text_info   = file_text[counter-3].split(/\s+/)
+          if !prev_line.match(/[A-Za-z]|[0-9]/)
+            text_info   = prev_prev_line.split(/\s+/)
           else
-            text_info   = file_text[counter-2].split(/\s+/)
+            text_info   = prev_line.split(/\s+/)
           end
           section_no  = text_info[0]
           test_name   = text_info[1..-1].join(" ")
@@ -409,35 +411,35 @@ def process_txt_file(txt_file,output_mode,output_file)
         do_rationale   = 0
         do_applicable  = 0
       end
-      if do_applicable == 1 and !line.match(/^Profile Applicability|Page$|P a g e$|Scored/) and line.match(/[A-z]|[0-9]/)
+      if do_applicable == 1 and !line.match(/^Profile Applicability|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]|[0-9]/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           line = line.gsub(/Level /,"")
           applicable.push(line)
         end
       end
-      if do_description == 1 and !line.match(/^Description|Page$|P a g e$|Scored/) and line.match(/[A-z]/)
+      if do_description == 1 and !line.match(/^Description|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           description.push(line)
         end
       end
-      if do_remediation == 1 and !line.match(/^Remediation|Page$|P a g e$|Scored/) and line.match(/[A-z]|[0-9]/)
+      if do_remediation == 1 and !line.match(/^Remediation|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]|[0-9]/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           remediation.push(line)
-          if line.match(/^\.\/|^#|^\$|^\\|\||grep |sudo |^defaults |chkconfig |yum |perl |sysctl |find |awk |echo |^done |^for |[a-z]=[0-9]|[a-z]\.[a-z]| -[A-z]/) or file_text[counter-2].match(/:$|\\$/) and !file_text[counter-2].match(/[V,v]alue|[E,e]nabled|Off:|Only:|[C,c]onfiguration:|similar|follows/)
-            if file_text[counter-2].match(/\\$/)
-              previous = file_text[counter-2].to_s.gsub(/\\$/,"").gsub(/\n/,"")
+          if line.match(/^\.\/|^#|^\$|^\\|\||grep |sudo |^defaults |chkconfig |yum |perl |sysctl |find |awk |echo |^done |^for |[a-z]=[0-9]|[a-z]\.[a-z]| -[A-Za-z]/) or prev_line.match(/:$|\\$/) and !prev_line.match(/[Vv]alue|[Ee]nabled|Off:|Only:|[Cc]onfiguration:|similar|follows/)
+            if prev_line.match(/\\$/)
+              previous = prev_line.to_s.gsub(/\\$/,"").gsub(/\n/,"")
               line     = previous+line
             end
-            if !line.match(/^definact|^PM|^root|^IP|^#\!|^\/tmp|^\/etc|^fs\.|^\/var|^password|^PASS|^options|^NET|^net\.|^-[A-z]|\|\|$|\{$|true$|^\$[A-Z][a-z]|Ensure|OS|N\/A|\[\]:|^o |^[0-9]|[a-z]ing|Preferences:|^YES|[A-z]\. [A-Z]|^##|[a-z]\.$|^# page|URL|XX|^# rotate|^# keep|combined$|^# images|^<[A-Z]|^#<[A-Z]|^#<\/[A-Z]|passwd:|[a-z][a-z]:$|^\*|^>|^body|^#[A-Z]|^# [A-Z]|body|header|timestamp|^<|^@|^No|[V,v]alue|[C,c]onfigured|[E,e]nabled|2[0-9][0-9][0-9]|groups|Error|Load|download|welcome|[D,d]ocument|[S,s]ecurity|[V,v]unerable|[A,a]vailable|proxy_[a-z]|[E,e]xample |[E,e]xpired|Verify|[C,c]onfiguration|loaded|^http|information|html|servername|^Options| the | does | can |^file|Password|AIDE|^id:|^restrict|^server|^auth|^kern|^daemon|^syslog|^lpr|^always|directory| may /)
+            if !line.match(/^definact|^PM|^root|^IP|^#\!|^\/tmp|^\/etc|^fs\.|^\/var|^password|^PASS|^options|^NET|^net\.|^-[A-Za-z]|\|\|$|\{$|true$|^\$[A-Z][a-z]|Ensure|OS|N\/A|\[\]:|^o |^[0-9]|[a-z]ing|Preferences:|^YES|[A-Za-z]\. [A-Z]|^##|[a-z]\.$|^# page|URL|XX|^# rotate|^# keep|combined$|^# images|^<[A-Z]|^#<[A-Z]|^#<\/[A-Z]|passwd:|[a-z][a-z]:$|^\*|^>|^body|^#[A-Z]|^# [A-Z]|body|header|timestamp|^<|^@|^No|[Vv]alue|[Cc]onfigured|[Ee]nabled|2[0-9][0-9][0-9]|groups|Error|Load|download|welcome|[Dd]ocument|[Ss]ecurity|[Vv]unerable|[Aa]vailable|proxy_[a-z]|[Ee]xample |[Ee]xpired|Verify|[Cc]onfiguration|loaded|^http|information|html|servername|^Options| the | does | can |^file|Password|AIDE|^id:|^restrict|^server|^auth|^kern|^daemon|^syslog|^lpr|^always|directory| may /)
               line = line.gsub(/ \\$/,"")
               line = line.gsub(/^#|^\$ |^\\/,"")
               line = line.gsub(/^\s+/,"")
@@ -451,21 +453,21 @@ def process_txt_file(txt_file,output_mode,output_file)
           end
         end
       end
-      if do_rationale == 1 and !line.match(/^Rationale|Page$|P a g e$|Scored/) and line.match(/[A-z]|[0-9]/)
+      if do_rationale == 1 and !line.match(/^Rationale|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]|[0-9]/)
         rationale.push(line)
       end
-      if do_audit == 1 and !line.match(/^Audit|Page$|P a g e$|Scored/) and line.match(/[A-z]|[0-9]/)
+      if do_audit == 1 and !line.match(/^Audit|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]|[0-9]/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           audit.push(line)
-          if line.match(/^\.\/|^#|^\$|^\\|\||grep |sudo |^defaults |chkconfig |yum |perl |sysctl |find |awk |echo |^done |^for |[a-z]=[0-9]|[a-z]\.[a-z]| -[A-z]/) or file_text[counter-2].match(/:$|\\$/) and !file_text[counter-2].match(/[V,v]alue|[C,c]onfigured|[E,e]nabled|Off:|Only:|similar|follows/)
-            if file_text[counter-2].match(/\\$/)
-              previous = file_text[counter-2].to_s.gsub(/\\$/,"").gsub(/\n/,"")
+          if line.match(/^\.\/|^#|^\$|^\\|\||grep |sudo |^defaults |chkconfig |yum |perl |sysctl |find |awk |echo |^done |^for |[a-z]=[0-9]|[a-z]\.[a-z]| -[A-Za-z]/) or prev_line.match(/:$|\\$/) and !prev_line.match(/[Vv]alue|[Cc]onfigured|[Ee]nabled|Off:|Only:|similar|follows/)
+            if prev_line.match(/\\$/)
+              previous = prev_line.to_s.gsub(/\\$/,"").gsub(/\n/,"")
               line     = previous+line
             end
-            if !line.match(/^definact|^PM|^root|^IP|^#\!|^\/tmp|^\/etc|^fs\.|^\/var|^password|^PASS|^options|^NET|^net\.|^-[A-z]|\|\|$|\{$|true$|^\$[A-Z][a-z]|Ensure|OS|N\/A|\[\]:|^o |^[0-9]|[a-z]ing|Preferences:|^YES|[A-z]\. [A-Z]|^##|[a-z]\.$|^# page|URL|XX|^# rotate|^# keep|combined$|^# images|^<[A-Z]|^#<[A-Z]|^#<\/[A-Z]|passwd:|[a-z][a-z]:$|^\*|^>|^body|^#[A-Z]|^# [A-Z]|body|header|timestamp|^<|^@|^No|[V,v]alue|[C,c]onfigured|[E,e]nabled|2[0-9][0-9][0-9]|groups|Error|Load|download|welcome|index|[D,d]ocument|[S,s]ecurity|[V,v]unerable|[A,a]vailable|proxy_[a-z]|[E,e]xample |[E,e]xpired|Verify|[C,c]onfiguration|loaded|^http|information|html|servername|^Options| the | does | can |^file|Password|AIDE|^id:|^restrict|^server|^auth|^kern|^daemon|^syslog|^lpr|^always|directory| may /)
+            if !line.match(/^definact|^PM|^root|^IP|^#\!|^\/tmp|^\/etc|^fs\.|^\/var|^password|^PASS|^options|^NET|^net\.|^-[A-Za-z]|\|\|$|\{$|true$|^\$[A-Z][a-z]|Ensure|OS|N\/A|\[\]:|^o |^[0-9]|[a-z]ing|Preferences:|^YES|[A-Za-z]\. [A-Z]|^##|[a-z]\.$|^# page|URL|XX|^# rotate|^# keep|combined$|^# images|^<[A-Z]|^#<[A-Z]|^#<\/[A-Z]|passwd:|[a-z][a-z]:$|^\*|^>|^body|^#[A-Z]|^# [A-Z]|body|header|timestamp|^<|^@|^No|[Vv]alue|[Cc]onfigured|[Ee]nabled|2[0-9][0-9][0-9]|groups|Error|Load|download|welcome|index|[Dd]ocument|[Ss]ecurity|[Vv]unerable|[Aa]vailable|proxy_[a-z]|[Ee]xample |[Ee]xpired|Verify|[Cc]onfiguration|loaded|^http|information|html|servername|^Options| the | does | can |^file|Password|AIDE|^id:|^restrict|^server|^auth|^kern|^daemon|^syslog|^lpr|^always|directory| may /)
               line = line.gsub(/ \\$/,"")
               line = line.gsub(/^#|^\$ |^\\/,"")
               line = line.gsub(/^\s+/,"")
@@ -479,30 +481,37 @@ def process_txt_file(txt_file,output_mode,output_file)
           end
         end
       end
-      if do_references == 1 and !line.match(/^References|Page$|P a g e$|Scored/) and line.match(/[A-z]|[0-9]/)
+      if do_references == 1 and !line.match(/^References|Page$|P a g e$|Scored/) and line.match(/[A-Za-z]|[0-9]/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           references.push(line)
         end
       end
       if do_impact == 1 and !line.match(/^Impact|Page$|P a g e$|Scored/)
         if !line.match(/^[0-9]\.$/)
-          if file_text[counter-2].match(/^[0-9]\.$/)
-            line = file_text[counter-2]+" "+line
+          if prev_line.match(/^[0-9]\.$/)
+            line = prev_line+" "+line
           end
           impact.push(line)
         end
       end
     end
   end
-  if output_file.match(/[A-z]/)
+  return
+end
+
+# Close the output file/workbook once all PDFs have been processed
+
+def close_output(output_mode,output_file)
+  if $output_open
     if output_mode == "xls"
-      workbook.close
+      $workbook.close
     else
-      file.close()
+      $file.close()
     end
+    $output_open = false
   end
   return
 end
@@ -515,9 +524,9 @@ def process_pdf_list(pdf_list,product,release,output_mode,output_file)
     do_file = 0
     if File.exist?(pdf_file)
       if product
-        if pdf_file.downcase.match(/#{product.downcase}/)
+        if pdf_file.downcase.match(/#{Regexp.escape(product.downcase)}/)
           if release
-            if pdf_file.downcase.match(/#{release}/)
+            if pdf_file.downcase.match(/#{Regexp.escape(release)}/)
               do_file = 1
             end
           else
@@ -591,6 +600,8 @@ else
   release = ""
 end
 
+output_mode = "txt"
+
 if opt["t"]
   output_mode = "txt"
 end
@@ -601,6 +612,11 @@ end
 
 if opt["x"]
   output_mode = "xls"
+end
+
+if opt["x"] and !opt["o"]
+  puts "XLS output requires an output file (-o)"
+  exit
 end
 
 if opt["o"]
@@ -624,10 +640,14 @@ if opt["o"]
   output_dir  = Pathname.new(output_file)
   output_dir  = output_dir.dirname.to_s
   if !File.directory?(output_dir)
-    File.mkpath(output_dir)
+    FileUtils.mkpath(output_dir)
   end
 else
   output_file = ""
+end
+
+if opt["d"]
+  pdf_dir = opt["d"]
 end
 
 if opt["l"]
@@ -638,12 +658,13 @@ if opt["l"]
 end
 
 if opt["a"] or opt["p"] or opt["r"] or opt["f"]
-  pdf_list = get_pdf_list(pdf_dir)
   if input_file
     txt_file = process_pdf_file(input_file)
     process_txt_file(txt_file,output_mode,output_file)
   else
+    pdf_list = get_pdf_list(pdf_dir)
     process_pdf_list(pdf_list,product,release,output_mode,output_file)
   end
 end
 
+close_output(output_mode,output_file)

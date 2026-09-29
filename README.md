@@ -7,7 +7,7 @@ security recommendations PDF into a run sheet template.
 License
 -------
 
-CC BY-SA: https://creativecommons.org/licenses/by-sa/4.0/
+CC BY-NC-SA: https://creativecommons.org/licenses/by-nc-sa/4.0/ (see LICENSE)
 
 Fund me here: https://ko-fi.com/richardatlateralblast
 
